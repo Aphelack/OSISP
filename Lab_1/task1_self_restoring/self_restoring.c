@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <tchar.h>
 
-#define SHARED_MEMORY_NAME _T("Global\\SelfRestoringProcessData")
+#define SHARED_MEMORY_NAME _T("SelfRestoringProcessData")
 #define BUFFER_SIZE 1024
 
 // Application context structure
@@ -122,20 +122,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 hwnd, (HMENU)2, NULL, NULL
             );
             
-            CreateWindow(
-                _T("BUTTON"),
-                _T("Close (Self-Restore)"),
-                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                100, 140, 200, 30,
-                hwnd, (HMENU)3, NULL, NULL
-            );
-            
             // Create info text
             CreateWindow(_T("STATIC"), 
-                        _T("Click 'Close (Self-Restore)' to restart the process.\n")
-                        _T("The counter and message will be preserved."),
+                        _T("Click 'Increment Counter' to increase the counter.\n")
+                        _T("Close the window (X button) to restart the process.\n")
+                        _T("The counter and message will be preserved after restart."),
                         WS_CHILD | WS_VISIBLE | SS_LEFT,
-                        10, 190, 460, 80,
+                        10, 140, 460, 80,
                         hwnd, NULL, NULL, NULL);
             
             UpdateDisplay();
@@ -148,10 +141,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     g_context.counter++;
                     GetWindowText(g_hwndEdit, g_context.message, 256);
                     UpdateDisplay();
-                    break;
-                    
-                case 3: // Close and restart
-                    PostMessage(hwnd, WM_CLOSE, 0, 0);
                     break;
             }
             break;
@@ -172,6 +161,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                           _T("Failed to create child process!"), 
                           _T("Error"),
                           MB_ICONERROR | MB_OK);
+            } else {
+                // Give child process time to start and open shared memory
+                Sleep(500);  // Wait 500ms
             }
             
             // Destroy window
@@ -179,8 +171,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             break;
         
         case WM_DESTROY:
-            // Clean up shared memory if not restarting
-            if (g_hMapFile != NULL && !g_context.isRestarting) {
+            // Clean up shared memory handle
+            if (g_hMapFile != NULL) {
                 CloseHandle(g_hMapFile);
                 g_hMapFile = NULL;
             }
@@ -229,6 +221,9 @@ void SaveContext()
     CopyMemory(pBuf, &g_context, sizeof(AppContext));
     
     UnmapViewOfFile(pBuf);
+    
+    // DON'T close g_hMapFile here! Keep it open until WM_DESTROY
+    // This keeps the shared memory alive for the child process
 }
 
 void LoadContext()
@@ -272,6 +267,10 @@ void LoadContext()
     g_context.isRestarting = FALSE;
     
     UnmapViewOfFile(pBuf);
+    
+    // DON'T close the handle immediately after loading
+    // Keep it open during the lifetime of this process
+    // It will be closed in WM_DESTROY
 }
 
 BOOL CreateChildProcess()
