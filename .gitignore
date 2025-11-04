@@ -1,0 +1,38 @@
+# Build directories
+build/
+*/build/
+**/build/
+
+# Compiled files
+*.exe
+*.o
+*.obj
+*.a
+*.lib
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+!toolchain-mingw64.cmake
+
+# IDE files
+.vscode/*
+!.vscode/settings.json
+!.vscode/c_cpp_properties.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Wine files
+*.wine/
+
+# OS files
+.DS_Store
+Thumbs.db

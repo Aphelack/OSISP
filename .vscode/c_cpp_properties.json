@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "name": "MinGW-w64 Cross-Compile",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "/usr/share/mingw-w64/include/**",
+        "/usr/x86_64-w64-mingw32/include/**"
+      ],
+      "defines": [
+        "UNICODE",
+        "_UNICODE",
+        "_WIN32",
+        "_WIN64",
+        "__MINGW64__"
+      ],
+      "compilerPath": "/usr/bin/x86_64-w64-mingw32-gcc",
+      "cStandard": "c99",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "gcc-x64",
+      "configurationProvider": "ms-vscode.cmake-tools"
+    }
+  ],
+  "version": 4
+}
