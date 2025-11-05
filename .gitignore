@@ -37,3 +37,5 @@ Makefile
 # OS files
 .DS_Store
 Thumbs.db
+*.dat
+large_files/
