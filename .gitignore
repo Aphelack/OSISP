@@ -2,6 +2,7 @@
 build/
 */build/
 **/build/
+**/*.dat
 
 # Compiled files
 *.exe

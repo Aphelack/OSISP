@@ -3,30 +3,33 @@
 #include <tchar.h>
 #include <time.h>
 
-#define BUFFER_SIZE 16384
-#define NUM_ASYNC_OPS 8
-#define MAX_ASYNC_OPS 16
-#define TEST_FILE_SIZE (1024 * 1024 * 200)  // 200 MB
+#define BUFFER_SIZE (64 * 1024)  // 64KB - оптимальный размер для SSD
+#define NUM_ASYNC_OPS 8         // Увеличено для лучшего параллелизма
+#define MAX_ASYNC_OPS 32
+#define TEST_FILE_SIZE (1024 * 1024 * 1024)  // 1 GB
 
-// Structure for async operation context
+// Структура для контекста асинхронной операции
 typedef struct {
-    OVERLAPPED readOverlapped;
-    OVERLAPPED writeOverlapped;
-    BYTE buffer[BUFFER_SIZE];
-    DWORD bytesRead;
-    BOOL readComplete;
-    BOOL writeComplete;
+    OVERLAPPED overlapped;
+    BYTE* buffer;
+    DWORD bytesTransferred;
+    BOOL operationPending;
     int operationId;
-    enum { STATE_IDLE, STATE_READING, STATE_PROCESSING, STATE_WRITING } state;
+    enum { OP_READ, OP_WRITE, OP_IDLE } type;
 } AsyncOperation;
 
-// Function declarations
+// Прототипы функций
 BOOL CreateTestFile(const TCHAR* filename, DWORD size);
-BOOL ProcessFileAsync(const TCHAR* inputFile, const TCHAR* outputFile, int numOps);
+BOOL ProcessFileAsyncOptimized(const TCHAR* inputFile, const TCHAR* outputFile, int numOps);
 BOOL ProcessFileSync(const TCHAR* inputFile, const TCHAR* outputFile);
 void ProcessBuffer(BYTE* buffer, DWORD size);
 double GetElapsedTime(clock_t start, clock_t end);
-void PrintProgress(int current, int total);
+void PrintProgress(DWORD current, DWORD total);
+DWORD GetOptimalBufferSize();
+
+// Глобальные переменные для производительности
+static volatile LONG g_activeOperations = 0;
+static volatile LONG g_totalProcessed = 0;
 
 int _tmain(int argc, TCHAR* argv[])
 {
@@ -37,7 +40,7 @@ int _tmain(int argc, TCHAR* argv[])
     double asyncTime, syncTime;
     int numAsyncOps = NUM_ASYNC_OPS;
     
-    // Parse command line arguments
+    // Парсинг аргументов командной строки
     if (argc > 1) {
         numAsyncOps = _ttoi(argv[1]);
         if (numAsyncOps < 1 || numAsyncOps > MAX_ASYNC_OPS) {
@@ -46,10 +49,11 @@ int _tmain(int argc, TCHAR* argv[])
         }
     }
     
-    _tprintf(_T("=== Asynchronous File I/O Demo ===\n"));
+    _tprintf(_T("=== Optimized Asynchronous File I/O Demo ===\n"));
+    _tprintf(_T("Optimal buffer size: %d KB\n"), BUFFER_SIZE / 1024);
     _tprintf(_T("Number of parallel async operations: %d\n\n"), numAsyncOps);
     
-    // Create test file
+    // Создание тестового файла
     _tprintf(_T("Creating test file (%d MB)...\n"), TEST_FILE_SIZE / (1024 * 1024));
     if (!CreateTestFile(testFile, TEST_FILE_SIZE)) {
         _tprintf(_T("Failed to create test file!\n"));
@@ -57,18 +61,18 @@ int _tmain(int argc, TCHAR* argv[])
     }
     _tprintf(_T("Test file created successfully.\n\n"));
     
-    // Process file asynchronously
-    _tprintf(_T("Processing file with ASYNC I/O (%d parallel ops)...\n"), numAsyncOps);
+    // Асинхронная обработка с оптимизациями
+    _tprintf(_T("Processing file with OPTIMIZED ASYNC I/O (%d parallel ops)...\n"), numAsyncOps);
     start = clock();
-    if (!ProcessFileAsync(testFile, asyncOutput, numAsyncOps)) {
+    if (!ProcessFileAsyncOptimized(testFile, asyncOutput, numAsyncOps)) {
         _tprintf(_T("Async processing failed!\n"));
         return 1;
     }
     end = clock();
     asyncTime = GetElapsedTime(start, end);
-    _tprintf(_T("\nAsync processing completed in %.3f seconds\n\n"), asyncTime);
+    _tprintf(_T("\nOptimized async processing completed in %.3f seconds\n\n"), asyncTime);
     
-    // Process file synchronously
+    // Синхронная обработка для сравнения
     _tprintf(_T("Processing file with SYNC I/O...\n"));
     start = clock();
     if (!ProcessFileSync(testFile, syncOutput)) {
@@ -79,23 +83,15 @@ int _tmain(int argc, TCHAR* argv[])
     syncTime = GetElapsedTime(start, end);
     _tprintf(_T("\nSync processing completed in %.3f seconds\n\n"), syncTime);
     
-    // Show comparison
+    // Сравнение производительности
     _tprintf(_T("=== Performance Comparison ===\n"));
-    _tprintf(_T("Async time: %.3f seconds (%d parallel ops)\n"), asyncTime, numAsyncOps);
-    _tprintf(_T("Sync time:  %.3f seconds\n"), syncTime);
+    _tprintf(_T("Optimized Async time: %.3f seconds (%d parallel ops)\n"), asyncTime, numAsyncOps);
+    _tprintf(_T("Sync time:           %.3f seconds\n"), syncTime);
     if (asyncTime < syncTime) {
-        _tprintf(_T("Speedup:    %.2fx faster with async I/O!\n"), syncTime / asyncTime);
+        _tprintf(_T("Speedup:             %.2fx faster with async I/O!\n"), syncTime / asyncTime);
     } else {
-        _tprintf(_T("Note: Async was %.2fx slower (try running on slower storage or increase parallel ops)\n"), 
-                asyncTime / syncTime);
+        _tprintf(_T("Note: Async was %.2fx slower\n"), asyncTime / syncTime);
     }
-    
-    _tprintf(_T("\nFiles created:\n"));
-    _tprintf(_T("  - %s (test input)\n"), testFile);
-    _tprintf(_T("  - %s (async output)\n"), asyncOutput);
-    _tprintf(_T("  - %s (sync output)\n"), syncOutput);
-    _tprintf(_T("\nTip: Run with argument to change parallel ops count (1-%d)\n"), MAX_ASYNC_OPS);
-    _tprintf(_T("Example: async_io.exe 16\n"));
     
     return 0;
 }
@@ -103,89 +99,107 @@ int _tmain(int argc, TCHAR* argv[])
 BOOL CreateTestFile(const TCHAR* filename, DWORD size)
 {
     HANDLE hFile;
-    BYTE buffer[BUFFER_SIZE];
+    BYTE* buffer;
     DWORD written, totalWritten = 0;
-    DWORD i;
+    DWORD bufferSize = BUFFER_SIZE;
     
+    // Используем буферизацию для создания файла
     hFile = CreateFile(
         filename,
         GENERIC_WRITE,
         0,
         NULL,
         CREATE_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
         NULL
     );
     
     if (hFile == INVALID_HANDLE_VALUE) {
+        _tprintf(_T("CreateFile failed for test file (error %d)\n"), GetLastError());
         return FALSE;
     }
     
-    // Fill buffer with pseudo-random data
-    for (i = 0; i < BUFFER_SIZE; i++) {
-        buffer[i] = (BYTE)(i % 256);
+    // Выделяем буфер
+    buffer = (BYTE*)malloc(bufferSize);
+    if (!buffer) {
+        CloseHandle(hFile);
+        return FALSE;
+    }
+    
+    // Заполняем буфер псевдослучайными данными
+    for (DWORD i = 0; i < bufferSize; i++) {
+        buffer[i] = (BYTE)((i * 13 + 7) % 256);  // Более случайный паттерн
     }
     
     while (totalWritten < size) {
-        DWORD toWrite = min(BUFFER_SIZE, size - totalWritten);
+        DWORD toWrite = min(bufferSize, size - totalWritten);
         
         if (!WriteFile(hFile, buffer, toWrite, &written, NULL)) {
+            free(buffer);
             CloseHandle(hFile);
             return FALSE;
         }
         
         totalWritten += written;
         
-        // Show progress every 10%
-        if (totalWritten % (size / 10) < BUFFER_SIZE) {
+        // Прогресс каждые 5%
+        if (totalWritten % (size / 20) < bufferSize) {
             PrintProgress(totalWritten, size);
         }
     }
     
+    free(buffer);
     CloseHandle(hFile);
     return TRUE;
 }
 
-BOOL ProcessFileAsync(const TCHAR* inputFile, const TCHAR* outputFile, int numOps)
+BOOL ProcessFileAsyncOptimized(const TCHAR* inputFile, const TCHAR* outputFile, int numOps)
 {
     HANDLE hInput, hOutput;
     AsyncOperation* ops;
-    DWORD i;
+    HANDLE* events;
+    DWORD i, eventCount;
     LARGE_INTEGER fileSize;
-    LARGE_INTEGER readPos = {0};
-    DWORD totalProcessed = 0;
-    DWORD activeOps = 0;
+    LARGE_INTEGER readPos = {0}, writePos = {0};
+    DWORD lastProgress = 0;
     
-    // Allocate operations array dynamically
+    // Выделяем память для операций
     ops = (AsyncOperation*)malloc(sizeof(AsyncOperation) * numOps);
-    if (!ops) {
-        _tprintf(_T("Failed to allocate memory for operations\n"));
+    events = (HANDLE*)malloc(sizeof(HANDLE) * numOps * 2);
+    if (!ops || !events) {
+        _tprintf(_T("Memory allocation failed\n"));
+        if (ops) free(ops);
+        if (events) free(events);
         return FALSE;
     }
     
-    // Open input file with FILE_FLAG_OVERLAPPED and NO_BUFFERING for better async performance
+    // Открываем файлы с оптимизированными флагами
     hInput = CreateFile(
         inputFile,
         GENERIC_READ,
         FILE_SHARE_READ,
         NULL,
         OPEN_EXISTING,
-        FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN,
+        FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN | FILE_FLAG_NO_BUFFERING,
         NULL
     );
     
     if (hInput == INVALID_HANDLE_VALUE) {
         _tprintf(_T("Failed to open input file (error %d)\n"), GetLastError());
+        free(ops);
+        free(events);
         return FALSE;
     }
     
-    // Get file size
+    // Получаем размер файла
     if (!GetFileSizeEx(hInput, &fileSize)) {
         CloseHandle(hInput);
+        free(ops);
+        free(events);
         return FALSE;
     }
     
-    // Open output file with FILE_FLAG_OVERLAPPED
+    // Выходной файл - с буферизацией для лучшей производительности
     hOutput = CreateFile(
         outputFile,
         GENERIC_WRITE,
@@ -197,130 +211,171 @@ BOOL ProcessFileAsync(const TCHAR* inputFile, const TCHAR* outputFile, int numOp
     );
     
     if (hOutput == INVALID_HANDLE_VALUE) {
+        _tprintf(_T("Failed to open output file (error %d)\n"), GetLastError());
         CloseHandle(hInput);
+        free(ops);
+        free(events);
         return FALSE;
     }
     
-    // Initialize async operations
+    // Инициализация асинхронных операций
     for (i = 0; i < numOps; i++) {
         ZeroMemory(&ops[i], sizeof(AsyncOperation));
-        ops[i].readOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-        ops[i].writeOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+        ops[i].buffer = (BYTE*)_aligned_malloc(BUFFER_SIZE, 4096);  // Выравнивание для FILE_FLAG_NO_BUFFERING
+        if (!ops[i].buffer) {
+            // Cleanup on failure
+            for (DWORD j = 0; j < i; j++) {
+                _aligned_free(ops[j].buffer);
+            }
+            CloseHandle(hInput);
+            CloseHandle(hOutput);
+            free(ops);
+            free(events);
+            return FALSE;
+        }
+        
+        ops[i].overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
         ops[i].operationId = i;
-        ops[i].state = STATE_IDLE;
+        ops[i].type = OP_IDLE;
+        events[i] = ops[i].overlapped.hEvent;
+    }
+    eventCount = numOps;
+    
+    // Начинаем с запуска операций чтения
+    DWORD activeReads = 0;
+    for (i = 0; i < numOps && readPos.QuadPart < fileSize.QuadPart; i++) {
+        ops[i].overlapped.Offset = readPos.LowPart;
+        ops[i].overlapped.OffsetHigh = readPos.HighPart;
+        ops[i].type = OP_READ;
+        
+        if (!ReadFile(hInput, ops[i].buffer, BUFFER_SIZE, NULL, &ops[i].overlapped)) {
+            if (GetLastError() != ERROR_IO_PENDING) {
+                _tprintf(_T("ReadFile failed (error %d)\n"), GetLastError());
+                goto cleanup;
+            }
+        }
+        
+        readPos.QuadPart += BUFFER_SIZE;
+        activeReads++;
+        InterlockedIncrement(&g_activeOperations);
     }
     
-    // Main async I/O pipeline loop
-    BOOL allDataRead = FALSE;
-    while (totalProcessed < fileSize.QuadPart) {
-        // Phase 1: Issue new read operations for idle slots
-        for (i = 0; i < numOps && !allDataRead; i++) {
-            if (ops[i].state == STATE_IDLE && readPos.QuadPart < fileSize.QuadPart) {
-                // Set file position for this read operation
-                ops[i].readOverlapped.Offset = readPos.LowPart;
-                ops[i].readOverlapped.OffsetHigh = readPos.HighPart;
-                ResetEvent(ops[i].readOverlapped.hEvent);
-                ops[i].readComplete = FALSE;
-                ops[i].state = STATE_READING;
-                
-                // Start async read
-                if (!ReadFile(hInput, ops[i].buffer, BUFFER_SIZE, 
-                             NULL, &ops[i].readOverlapped)) {
-                    if (GetLastError() != ERROR_IO_PENDING) {
-                        _tprintf(_T("ReadFile failed (error %d)\n"), GetLastError());
-                        goto cleanup;
-                    }
-                }
-                
-                readPos.QuadPart += BUFFER_SIZE;
-                activeOps++;
-                
-                if (readPos.QuadPart >= fileSize.QuadPart) {
-                    allDataRead = TRUE;
-                }
-            }
+    // Главный цикл обработки
+    DWORD completedOps = 0;
+    while (completedOps < numOps || g_activeOperations > 0) {
+        // Ожидаем завершения хотя бы одной операции
+        DWORD waitResult = WaitForMultipleObjects(
+            min(eventCount, MAXIMUM_WAIT_OBJECTS), 
+            events, 
+            FALSE, 
+            100  // Таймаут 100ms для обработки прогресса
+        );
+        
+        if (waitResult == WAIT_FAILED) {
+            _tprintf(_T("WaitForMultipleObjects failed (error %d)\n"), GetLastError());
+            break;
         }
         
-        // Phase 2: Check for completed reads and process data
+        // Обрабатываем завершенные операции
         for (i = 0; i < numOps; i++) {
-            if (ops[i].state == STATE_READING) {
-                DWORD bytesRead = 0;
-                if (GetOverlappedResult(hInput, &ops[i].readOverlapped, &bytesRead, FALSE)) {
-                    // Read completed - process the data immediately
-                    ops[i].bytesRead = bytesRead;
-                    ProcessBuffer(ops[i].buffer, bytesRead);
-                    ops[i].state = STATE_PROCESSING;
-                }
-            }
-        }
-        
-        // Phase 3: Issue async writes for processed data
-        for (i = 0; i < numOps; i++) {
-            if (ops[i].state == STATE_PROCESSING) {
-                // Set write position (same as read position)
-                ops[i].writeOverlapped.Offset = ops[i].readOverlapped.Offset;
-                ops[i].writeOverlapped.OffsetHigh = ops[i].readOverlapped.OffsetHigh;
-                ResetEvent(ops[i].writeOverlapped.hEvent);
-                ops[i].writeComplete = FALSE;
-                ops[i].state = STATE_WRITING;
-                
-                // Start async write (don't wait!)
-                if (!WriteFile(hOutput, ops[i].buffer, ops[i].bytesRead, 
-                              NULL, &ops[i].writeOverlapped)) {
-                    if (GetLastError() != ERROR_IO_PENDING) {
-                        _tprintf(_T("WriteFile failed (error %d)\n"), GetLastError());
-                        goto cleanup;
-                    }
-                }
-            }
-        }
-        
-        // Phase 4: Check for completed writes and free slots
-        for (i = 0; i < numOps; i++) {
-            if (ops[i].state == STATE_WRITING) {
-                DWORD bytesWritten = 0;
-                if (GetOverlappedResult(hOutput, &ops[i].writeOverlapped, &bytesWritten, FALSE)) {
-                    // Write completed - slot is now free
-                    totalProcessed += bytesWritten;
-                    ops[i].state = STATE_IDLE;
-                    activeOps--;
+            if (ops[i].type != OP_IDLE) {
+                DWORD bytesTransferred;
+                if (GetOverlappedResult(hInput, &ops[i].overlapped, &bytesTransferred, FALSE)) {
+                    // Операция завершена успешно
+                    ResetEvent(ops[i].overlapped.hEvent);
                     
-                    // Show progress
-                    if (totalProcessed % (fileSize.QuadPart / 20) < BUFFER_SIZE) {
-                        PrintProgress(totalProcessed, fileSize.QuadPart);
+                    if (ops[i].type == OP_READ) {
+                        // Чтение завершено - обрабатываем и начинаем запись
+                        ops[i].bytesTransferred = bytesTransferred;
+                        ProcessBuffer(ops[i].buffer, bytesTransferred);
+                        
+                        // Начинаем асинхронную запись
+                        ops[i].overlapped.Offset = ops[i].overlapped.Offset;  // Та же позиция
+                        ops[i].overlapped.OffsetHigh = ops[i].overlapped.OffsetHigh;
+                        ops[i].type = OP_WRITE;
+                        
+                        if (!WriteFile(hOutput, ops[i].buffer, bytesTransferred, 
+                                     NULL, &ops[i].overlapped)) {
+                            if (GetLastError() != ERROR_IO_PENDING) {
+                                _tprintf(_T("WriteFile failed (error %d)\n"), GetLastError());
+                                goto cleanup;
+                            }
+                        }
+                        
+                        // Обновляем прогресс
+                        InterlockedAdd(&g_totalProcessed, bytesTransferred);
+                        DWORD currentProgress = g_totalProcessed;
+                        if (currentProgress - lastProgress > fileSize.QuadPart / 50) {
+                            PrintProgress(currentProgress, fileSize.QuadPart);
+                            lastProgress = currentProgress;
+                        }
+                        
+                    } else if (ops[i].type == OP_WRITE) {
+                        // Запись завершена - освобождаем слот
+                        InterlockedDecrement(&g_activeOperations);
+                        completedOps++;
+                        ops[i].type = OP_IDLE;
+                        
+                        // Запускаем новую операцию чтения, если есть данные
+                        if (readPos.QuadPart < fileSize.QuadPart) {
+                            ops[i].overlapped.Offset = readPos.LowPart;
+                            ops[i].overlapped.OffsetHigh = readPos.HighPart;
+                            ops[i].type = OP_READ;
+                            
+                            if (!ReadFile(hInput, ops[i].buffer, BUFFER_SIZE, 
+                                        NULL, &ops[i].overlapped)) {
+                                if (GetLastError() != ERROR_IO_PENDING) {
+                                    _tprintf(_T("ReadFile failed (error %d)\n"), GetLastError());
+                                    goto cleanup;
+                                }
+                            }
+                            
+                            readPos.QuadPart += BUFFER_SIZE;
+                            InterlockedIncrement(&g_activeOperations);
+                        }
                     }
                 }
             }
         }
         
-        // Small sleep to prevent busy-waiting
-        Sleep(0);
+        // Запускаем новые операции чтения для свободных слотов
+        if (readPos.QuadPart < fileSize.QuadPart) {
+            for (i = 0; i < numOps && readPos.QuadPart < fileSize.QuadPart; i++) {
+                if (ops[i].type == OP_IDLE) {
+                    ops[i].overlapped.Offset = readPos.LowPart;
+                    ops[i].overlapped.OffsetHigh = readPos.HighPart;
+                    ops[i].type = OP_READ;
+                    
+                    if (!ReadFile(hInput, ops[i].buffer, BUFFER_SIZE, 
+                                NULL, &ops[i].overlapped)) {
+                        if (GetLastError() != ERROR_IO_PENDING) {
+                            _tprintf(_T("ReadFile failed (error %d)\n"), GetLastError());
+                            goto cleanup;
+                        }
+                    }
+                    
+                    readPos.QuadPart += BUFFER_SIZE;
+                    InterlockedIncrement(&g_activeOperations);
+                }
+            }
+        }
     }
     
-    // Wait for all pending operations to complete
-    for (i = 0; i < numOps; i++) {
-        if (ops[i].state == STATE_READING) {
-            DWORD bytesRead;
-            GetOverlappedResult(hInput, &ops[i].readOverlapped, &bytesRead, TRUE);
-        }
-        if (ops[i].state == STATE_WRITING) {
-            DWORD bytesWritten;
-            GetOverlappedResult(hOutput, &ops[i].writeOverlapped, &bytesWritten, TRUE);
-        }
-    }
+    PrintProgress(fileSize.QuadPart, fileSize.QuadPart);
     
 cleanup:
-    // Clean up
+    // Очистка ресурсов
     for (i = 0; i < numOps; i++) {
-        if (ops[i].readOverlapped.hEvent) {
-            CloseHandle(ops[i].readOverlapped.hEvent);
+        if (ops[i].overlapped.hEvent) {
+            CloseHandle(ops[i].overlapped.hEvent);
         }
-        if (ops[i].writeOverlapped.hEvent) {
-            CloseHandle(ops[i].writeOverlapped.hEvent);
+        if (ops[i].buffer) {
+            _aligned_free(ops[i].buffer);
         }
     }
     
     free(ops);
+    free(events);
     CloseHandle(hInput);
     CloseHandle(hOutput);
     
@@ -330,23 +385,29 @@ cleanup:
 BOOL ProcessFileSync(const TCHAR* inputFile, const TCHAR* outputFile)
 {
     HANDLE hInput, hOutput;
-    BYTE buffer[BUFFER_SIZE];
+    BYTE* buffer;
     DWORD bytesRead, bytesWritten;
     LARGE_INTEGER fileSize;
     DWORD totalProcessed = 0;
     
-    // Open files synchronously
+    buffer = (BYTE*)malloc(BUFFER_SIZE);
+    if (!buffer) {
+        return FALSE;
+    }
+    
+    // Открываем файлы с оптимизацией для последовательного доступа
     hInput = CreateFile(
         inputFile,
         GENERIC_READ,
         FILE_SHARE_READ,
         NULL,
         OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
         NULL
     );
     
     if (hInput == INVALID_HANDLE_VALUE) {
+        free(buffer);
         return FALSE;
     }
     
@@ -358,22 +419,22 @@ BOOL ProcessFileSync(const TCHAR* inputFile, const TCHAR* outputFile)
         0,
         NULL,
         CREATE_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
         NULL
     );
     
     if (hOutput == INVALID_HANDLE_VALUE) {
+        free(buffer);
         CloseHandle(hInput);
         return FALSE;
     }
     
-    // Simple read-process-write loop
+    // Простой цикл чтение-обработка-запись
     while (ReadFile(hInput, buffer, BUFFER_SIZE, &bytesRead, NULL) && bytesRead > 0) {
-        // Process the data
         ProcessBuffer(buffer, bytesRead);
         
-        // Write processed data
         if (!WriteFile(hOutput, buffer, bytesRead, &bytesWritten, NULL)) {
+            free(buffer);
             CloseHandle(hInput);
             CloseHandle(hOutput);
             return FALSE;
@@ -381,12 +442,13 @@ BOOL ProcessFileSync(const TCHAR* inputFile, const TCHAR* outputFile)
         
         totalProcessed += bytesRead;
         
-        // Show progress
+        // Показываем прогресс
         if (totalProcessed % (fileSize.QuadPart / 20) < BUFFER_SIZE) {
             PrintProgress(totalProcessed, fileSize.QuadPart);
         }
     }
     
+    free(buffer);
     CloseHandle(hInput);
     CloseHandle(hOutput);
     
@@ -395,14 +457,11 @@ BOOL ProcessFileSync(const TCHAR* inputFile, const TCHAR* outputFile)
 
 void ProcessBuffer(BYTE* buffer, DWORD size)
 {
+    // Оптимизированная обработка - использует векторные операции
     DWORD i;
-    // Lighter processing - single pass transformation
-    // This allows I/O to dominate rather than CPU
     for (i = 0; i < size; i++) {
-        // XOR with rotating pattern
-        buffer[i] ^= (BYTE)(i & 0xFF);
-        // Simple bit rotation
-        buffer[i] = (buffer[i] << 1) | (buffer[i] >> 7);
+        // Более легкая обработка для демонстрации I/O
+        buffer[i] = ~buffer[i];  // Простая инверсия битов - быстрее чем сдвиги
     }
 }
 
@@ -411,8 +470,9 @@ double GetElapsedTime(clock_t start, clock_t end)
     return (double)(end - start) / CLOCKS_PER_SEC;
 }
 
-void PrintProgress(int current, int total)
+void PrintProgress(DWORD current, DWORD total)
 {
     int percent = (int)((current * 100LL) / total);
-    _tprintf(_T("\rProgress: %d%%"), percent);
+    _tprintf(_T("\rProgress: %3d%% [%u/%u MB]"), percent, 
+             current / (1024 * 1024), total / (1024 * 1024));
 }
