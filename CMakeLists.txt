@@ -8,3 +8,4 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # Add subdirectories for each lab
 add_subdirectory(Lab_1)
 add_subdirectory(Lab_2)
+add_subdirectory(Lab_3)
