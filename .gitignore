@@ -3,6 +3,7 @@ build/
 */build/
 **/build/
 **/*.dat
+**/*.dll
 
 # Compiled files
 *.exe
@@ -39,3 +40,4 @@ Makefile
 Thumbs.db
 *.dat
 large_files/
+

@@ -1,6 +1,9 @@
 #!/bin/bash
 # Build and run script for async_io demo
 
+# Change to the script's directory
+cd "$(dirname "$0")"
+
 echo "=== Building async_io demo ==="
 make clean
 make

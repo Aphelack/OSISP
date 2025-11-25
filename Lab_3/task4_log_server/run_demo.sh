@@ -1,6 +1,9 @@
 #!/bin/bash
 # Demo script for log server and multiple clients
 
+# Change to the script's directory
+cd "$(dirname "$0")"
+
 echo "=== Log Server Demo ==="
 echo ""
 

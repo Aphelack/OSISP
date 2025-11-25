@@ -1,6 +1,9 @@
 #!/bin/bash
 # Script to run the self-restoring process with Wine
 
+# Change to the script's directory
+cd "$(dirname "$0")"
+
 echo "Starting Self-Restoring Process Demo..."
 echo "========================================"
 echo ""
