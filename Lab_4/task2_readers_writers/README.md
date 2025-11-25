@@ -1,27 +1,27 @@
-# Task 2: Readers-Writers Problem
+# Задание 2: Проблема Читателей-Писателей
 
-## Description
-Implementation of the Readers-Writers synchronization problem using Windows API primitives (Mutex, Semaphore, Critical Section).
+## Описание
+Реализация задачи синхронизации "Читатели-Писатели" с использованием примитивов Windows API (Мьютекс, Семафор, Критическая секция).
 
-The program demonstrates:
-- Multiple reader threads accessing a shared resource concurrently.
-- Writer threads accessing the shared resource exclusively.
-- Prevention of race conditions and "dirty reads".
-- Synchronization using `CreateSemaphore`, `CreateMutex`, `InitializeCriticalSection`, `WaitForSingleObject`.
+Программа демонстрирует:
+- Множество потоков-читателей, получающих доступ к общему ресурсу одновременно.
+- Потоки-писатели, получающие эксклюзивный доступ к общему ресурсу.
+- Предотвращение состояний гонки и "грязного чтения".
+- Синхронизацию с использованием `CreateSemaphore`, `CreateMutex`, `InitializeCriticalSection`, `WaitForSingleObject`.
 
-## Build and Run
+## Сборка и Запуск
 
-### Prerequisites
-- MinGW-w64 (for cross-compilation on Linux)
-- Wine (to run the Windows executable)
+### Требования
+- MinGW-w64 (для кросс-компиляции на Linux)
+- Wine (для запуска исполняемого файла Windows)
 - CMake
 
-### Using Script
+### Использование скрипта
 ```bash
 ./run.sh
 ```
 
-### Manual Build (CMake)
+### Ручная сборка (CMake)
 ```bash
 mkdir build
 cd build
@@ -30,7 +30,7 @@ make
 wine readers_writers.exe
 ```
 
-### Manual Build (Makefile)
+### Ручная сборка (Makefile)
 ```bash
 make
 wine readers_writers.exe

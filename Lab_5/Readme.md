@@ -1,11 +1,11 @@
-# Lab 5: Network Programming
+# Лабораторная работа 5: Сетевое программирование
 
-This lab explores network programming using Sockets.
+Эта лабораторная работа посвящена сетевому программированию с использованием сокетов.
 
-## Tasks
+## Задания
 
-### [Task 1: TCP Chat](./task1_tcp_chat/)
-Implementation of a multi-user chat using TCP sockets (Winsock2).
-- **Source:** `task1_tcp_chat/server.c`, `task1_tcp_chat/client.c`
-- **Build:** CMake or Makefile (MinGW)
-- **Run:** Wine
+### [Задание 1: TCP Чат](./task1_tcp_chat/)
+Реализация многопользовательского чата с использованием TCP сокетов (Winsock2).
+- **Исходный код:** `task1_tcp_chat/server.c`, `task1_tcp_chat/client.c`
+- **Сборка:** CMake или Makefile (MinGW)
+- **Запуск:** Wine

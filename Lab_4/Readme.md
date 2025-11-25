@@ -1,11 +1,11 @@
-# Lab 4: Process Synchronization
+# Лабораторная работа 4: Синхронизация процессов
 
-This lab explores synchronization mechanisms for interacting processes and threads.
+Эта лабораторная работа посвящена механизмам синхронизации взаимодействующих процессов и потоков.
 
-## Tasks
+## Задания
 
-### [Task 2: Readers-Writers](./task2_readers_writers/)
-Implementation of the Readers-Writers problem using Windows API synchronization primitives (Mutex, Semaphore, Critical Section).
-- **Source:** `task2_readers_writers/main.cpp`
-- **Build:** CMake or Makefile (MinGW)
-- **Run:** Wine
+### [Задание 2: Читатели-Писатели](./task2_readers_writers/)
+Реализация задачи "Читатели-Писатели" с использованием примитивов синхронизации Windows API (Мьютекс, Семафор, Критическая секция).
+- **Исходный код:** `task2_readers_writers/main.cpp`
+- **Сборка:** CMake или Makefile (MinGW)
+- **Запуск:** Wine

@@ -1,11 +1,11 @@
-# Lab 6: System Tasks and Libraries
+# Лабораторная работа 6: Системные задачи и библиотеки
 
-This lab explores system configuration, logging, and library creation.
+Эта лабораторная работа посвящена конфигурации системы, журналированию и созданию библиотек.
 
-## Tasks
+## Задания
 
-### [Task 7: Dynamic Link Library (DLL)](./task7_dll/)
-Creation and usage of a Windows DLL with Explicit Linking.
-- **Source:** `task7_dll/math_library.c` (DLL), `task7_dll/client.c` (Client)
-- **Build:** CMake or Makefile (MinGW)
-- **Run:** Wine
+### [Задание 7: Динамическая библиотека (DLL)](./task7_dll/)
+Создание и использование Windows DLL с явным связыванием (Explicit Linking).
+- **Исходный код:** `task7_dll/math_library.c` (DLL), `task7_dll/client.c` (Клиент)
+- **Сборка:** CMake или Makefile (MinGW)
+- **Запуск:** Wine

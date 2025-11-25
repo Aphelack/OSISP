@@ -1,23 +1,23 @@
-# Task 7: Dynamic Link Library (DLL)
+# Задание 7: Динамическая библиотека (DLL)
 
-## Description
-Demonstration of creating and using a Windows Dynamic Link Library (DLL).
+## Описание
+Демонстрация создания и использования динамической библиотеки Windows (DLL).
 
-- **math_library.dll**: A simple DLL exporting mathematical functions (`Add`, `Subtract`, `Multiply`, `Divide`).
-- **client.exe**: A console application that loads the DLL at runtime (Explicit Linking) using `LoadLibrary` and `GetProcAddress`, executes the functions, and then unloads the DLL.
+- **math_library.dll**: Простая DLL, экспортирующая математические функции (`Add`, `Subtract`, `Multiply`, `Divide`).
+- **client.exe**: Консольное приложение, которое загружает DLL во время выполнения (Явное связывание / Explicit Linking) используя `LoadLibrary` и `GetProcAddress`, выполняет функции и затем выгружает DLL.
 
-## Build and Run
+## Сборка и Запуск
 
-### Prerequisites
+### Требования
 - MinGW-w64
 - Wine
 
-### Using Script
+### Использование скрипта
 ```bash
 ./run.sh
 ```
 
-### Manual Build
+### Ручная сборка
 ```bash
 make
 wine client.exe
